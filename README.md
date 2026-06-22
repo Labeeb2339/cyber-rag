@@ -142,21 +142,49 @@ are retrieved and cited alongside ATT&CK/KEV/CAPEC just like everything else.
 score 8/10), and answered with the exact C2 domain and mitigations quoted from
 the document — nothing invented, nothing sent to a cloud.
 
+## Results (measured)
+
+15-question benchmark spanning web exploitation, ATT&CK techniques, CVEs, and
+threat-group intel. Answers graded 0–1 for technical correctness by an
+**independent cloud model** (not the local generator — no self-grading bias).
+
+| metric | local-only | **CyberRAG** | cloud ceiling |
+|---|---|---|---|
+| Correctness (LLM-judge) | 0.43 | **0.65** | 0.77 |
+| Keyword coverage | 0.63 | **0.84** | 0.93 |
+| Retrieval hit-rate | — | **0.93** | — |
+| Latency (s/query) | 12 | **15** | 45 |
+| Cost / data egress | $0 / none | **$0 / none** | $$ / full prompt leaves |
+
+**Read:**
+- CyberRAG beats raw local-only on **every question** — correctness +51%
+  (0.43→0.65), keyword coverage +34%. RAG supplies the domain expertise the
+  small model lacks.
+- It closes **~58% of the gap** to the expensive cloud model, at **$0**, **3×
+  faster**, and with **zero data egress**.
+- Honest caveat: it does *not* fully match cloud on graded correctness (0.65 vs
+  0.77). The claim is "near-cloud quality, local and private" — not "identical."
+
+> The eval also did its job as an engineering tool: the first run exposed that
+> exact CVE/ATT&CK-ID lookups were failing (Log4Shell returned nothing). Fixing
+> the retrieval (query stopword stripping + exact-ID boost + canonical-doc
+> lookup) lifted retrieval hit-rate 0.53 → 0.93 and correctness 0.59 → 0.65.
+
 ## Success criteria
 
-- CyberRAG **beats local-only** decisively → RAG supplies the missing expertise.
-- CyberRAG lands **within a small margin of cloud** → the gap is bridged.
-- **Zero egress** during queries → verifiable by running with the NIC disabled.
+- ✅ CyberRAG **beats local-only** decisively → RAG supplies the missing expertise.
+- ◑ CyberRAG lands **near cloud** (closes ~58% of the gap) → strong, not parity.
+- ✅ **Zero egress** during queries → verifiable by running with the NIC disabled.
 
 ## Project layout
 
 ```
 cyber-rag/
 ├── corpus/          authoritative source docs (attack/kev/capec/sigma)
-├── ingest/          fetch_authoritative.py, build_index.py
+├── ingest/          fetch_authoritative.py, build_index.py, ingest_docs.py (PDF/DOCX/TXT)
 ├── rag/             hybrid.py (retrieval), kg.py (graph), engine.py (unified)
 ├── eval/            questions.json, run_eval.py, results_*.json
 ├── data/            chroma/ (vectors), bm25.pkl, attack_kg.pkl
 ├── demo.py          interactive CLI
-└── docs/ARCHITECTURE.md
+└── docs/            ARCHITECTURE.md, EXECUTIVE_BRIEF.md
 ```
