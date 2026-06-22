@@ -24,9 +24,24 @@ GEN_MODEL = "qwen2.5-coder:7b-64k"
 
 _tok = re.compile(r"[A-Za-z0-9_.\-]+")
 
+# Common English stopwords. Stripped from QUERIES only (not from the indexed
+# corpus) so that rare, high-signal tokens — CVE IDs, ATT&CK technique IDs, tool
+# and malware names — dominate BM25 scoring instead of being drowned out by
+# matches on "what/is/the/how" across thousands of documents.
+_STOP = frozenset("""a an and are as at be been but by can could do does for from
+had has have how i if in into is it its more most no not of on or our should so
+such that the their then there these they this to use using was what when where
+which who why will with would you your about above after again against""".split())
+
 
 def tokenize(text):
     return [t.lower() for t in _tok.findall(text)]
+
+
+def tokenize_query(text):
+    """Tokenize a query and drop stopwords so rare identifiers dominate BM25."""
+    toks = [t for t in tokenize(text) if t not in _STOP and len(t) > 1]
+    return toks or tokenize(text)  # never return empty
 
 
 def build_bm25():
@@ -71,7 +86,7 @@ def vector_search(query, k, source_filter=None):
 
 def bm25_search(query, k, source_filter=None):
     store = _load_bm25()
-    scores = store["bm25"].get_scores(tokenize(query))
+    scores = store["bm25"].get_scores(tokenize_query(query))
     ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
     out = []
     for i in ranked:
@@ -84,13 +99,35 @@ def bm25_search(query, k, source_filter=None):
     return out
 
 
-def rrf_fuse(vec, bm, k=60):
-    """Reciprocal Rank Fusion of two ranked lists."""
+_ID_RE = re.compile(r"\b(?:CVE-\d{4}-\d{4,7}|T\d{4}(?:\.\d{3})?|CAPEC-\d+|CWE-\d+)\b", re.I)
+
+
+def _query_ids(query):
+    return set(m.upper() for m in _ID_RE.findall(query))
+
+
+def rrf_fuse(vec, bm, k=60, query=None):
+    """Reciprocal Rank Fusion of two ranked lists, with an exact-identifier boost.
+
+    If the query names a hard identifier (CVE / ATT&CK / CAPEC / CWE), any
+    candidate whose text or metadata contains that exact ID is promoted — an
+    exact ID match is a near-certain relevance signal that plain BM25 can let
+    slip when common query words inflate unrelated docs.
+    """
+    ids = _query_ids(query) if query else set()
     rank = {}
     for lst in (vec, bm):
         for r, item in enumerate(lst):
             rank.setdefault(item["id"], {"item": item, "score": 0.0})
             rank[item["id"]]["score"] += 1.0 / (k + r + 1)
+    if ids:
+        for entry in rank.values():
+            it = entry["item"]
+            hay = (it.get("doc", "") + " " + str(it.get("meta", {}).get("attack_ids", "")) +
+                   " " + str(it.get("meta", {}).get("cve_ids", "")) +
+                   " " + str(it.get("meta", {}).get("doc", ""))).upper()
+            if any(i in hay for i in ids):
+                entry["score"] += 1.0  # dominant boost: exact ID match wins
     fused = sorted(rank.values(), key=lambda x: x["score"], reverse=True)
     return [f["item"] for f in fused]
 
@@ -118,11 +155,45 @@ def llm_rerank(query, candidates, top_n):
     return candidates[:top_n]
 
 
+def id_lookup(ids, source_filter=None):
+    """Directly fetch the canonical doc for an exact identifier (CVE/ATT&CK).
+    The authoritative corpus names these docs `<ID>.md` (e.g. CVE-2021-44228.md,
+    T1059.md), so we match on doc name — guarantees the canonical doc is a
+    candidate even if vector+BM25 both miss it (common for opaque ID tokens)."""
+    if not ids:
+        return []
+    col = _col()
+    out, seen = [], set()
+    for ident in ids:
+        candidates = [f"{ident}.md", f"{ident.upper()}.md"]
+        for docname in set(candidates):
+            try:
+                got = col.get(where={"doc": {"$eq": docname}},
+                              include=["documents", "metadatas"], limit=4)
+            except Exception:
+                continue
+            for i, cid in enumerate(got.get("ids", [])):
+                if cid in seen:
+                    continue
+                meta = got["metadatas"][i]
+                if source_filter and meta.get("source") not in source_filter:
+                    continue
+                seen.add(cid)
+                out.append({"id": cid, "doc": got["documents"][i], "meta": meta, "idmatch": True})
+    return out
+
+
 def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True):
-    """Main entry: vector + BM25 -> RRF -> (optional) LLM rerank -> top_k."""
+    """Main entry: vector + BM25 (+ exact-ID lookup) -> RRF -> rerank -> top_k."""
     vec = vector_search(query, pool, source_filter)
     bm = bm25_search(query, pool, source_filter)
-    fused = rrf_fuse(vec, bm)[:pool]
+    ids = _query_ids(query)
+    # guarantee canonical ID docs are in the candidate pool
+    direct = id_lookup(ids, source_filter)
+    if direct:
+        # prepend so RRF sees them at rank 0 in a third list
+        vec = direct + vec
+    fused = rrf_fuse(vec, bm, query=query)[:pool]
     if rerank and fused:
         fused = llm_rerank(query, fused, top_k)
     else:
