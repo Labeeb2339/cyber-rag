@@ -21,3 +21,5 @@ eval/results_*.json
 # OS
 Thumbs.db
 .DS_Store
+eval_run.log
+test_docs/

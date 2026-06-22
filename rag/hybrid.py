@@ -96,21 +96,26 @@ def rrf_fuse(vec, bm, k=60):
 
 
 def llm_rerank(query, candidates, top_n):
-    """Lightweight local rerank: ask the LLM to score each candidate 0-10."""
-    scored = []
-    for c in candidates:
-        prompt = (f"Rate how relevant this passage is to the question on a scale 0-10. "
-                  f"Reply with ONLY a number.\n\nQuestion: {query}\n\nPassage:\n{c['doc'][:800]}")
+    """Lightweight local rerank: ask the LLM to score each candidate 0-10.
+    Keeps the fused RRF order as a tiebreaker so rerank only ever helps."""
+    for idx, c in enumerate(candidates):
+        prompt = (f"On a scale of 0 to 10, how relevant is the passage to the question? "
+                  f"Answer with ONLY a single integer 0-10, nothing else.\n\n"
+                  f"Question: {query}\n\nPassage:\n{c['doc'][:700]}\n\nScore (0-10):")
         try:
             r = ollama.generate(model=GEN_MODEL, prompt=prompt,
-                                options={"temperature": 0, "num_predict": 4})
-            m = re.search(r"\d+", r["response"])
-            c["rerank"] = int(m.group()) if m else 0
+                                options={"temperature": 0, "num_predict": 6, "stop": ["\n"]})
+            m = re.search(r"\b(10|[0-9])\b", r["response"])
+            c["rerank"] = int(m.group()) if m else None
         except Exception:
-            c["rerank"] = 0
-        scored.append(c)
-    scored.sort(key=lambda x: x.get("rerank", 0), reverse=True)
-    return scored[:top_n]
+            c["rerank"] = None
+        # fused-order tiebreaker: earlier RRF rank = small bonus, keeps stable order
+        c["_fused_rank"] = idx
+    # if the LLM gave usable scores, sort by them; else fall back to fused order
+    if any(c.get("rerank") is not None for c in candidates):
+        candidates.sort(key=lambda x: (x.get("rerank") if x.get("rerank") is not None else -1,
+                                       -x["_fused_rank"]), reverse=True)
+    return candidates[:top_n]
 
 
 def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True):

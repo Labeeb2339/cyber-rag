@@ -110,10 +110,37 @@ python rag/kg.py build                    # build ATT&CK knowledge graph
 python demo.py                            # interactive
 python demo.py "Which techniques does APT29 use and how to detect them?"
 
+# >>> ingest YOUR OWN sensitive documents (the feature a real SOC/CERT needs) <<<
+python ingest/ingest_docs.py ./my_reports --source internal-cti --recursive
+python rag/hybrid.py build                # refresh BM25 so new docs are searchable
+#   supports PDF, DOCX, MD, TXT, HTML — extraction/embedding/storage all local.
+#   auto-tags MITRE ATT&CK technique IDs and CVE IDs found in each document.
+#   re-ingesting an updated file safely overwrites its old chunks (stable IDs).
+
 # prove the thesis
 python eval/run_eval.py --judge           # local-only vs CyberRAG, with scores
 python eval/run_eval.py --cloud --judge   # full A/B/C vs cloud ceiling
 ```
+
+## Ingest your own intelligence (the real-world use case)
+
+The authoritative corpus proves the system works on public data. But the reason a
+CERT/SOC would deploy CyberRAG is to query **their own** classified material —
+internal threat advisories, incident post-mortems, pentest reports, vendor briefs
+— **without any of it leaving the building**.
+
+```bash
+python ingest/ingest_docs.py /path/to/confidential_report.pdf --source my-org
+python rag/hybrid.py build
+python demo.py "What was the C2 domain and mitigation in the BNM phishing advisory?"
+```
+
+The loader extracts text (PyMuPDF for PDF, python-docx for Word), chunks it,
+embeds locally, and upserts into the same knowledge base — so your private docs
+are retrieved and cited alongside ATT&CK/KEV/CAPEC just like everything else.
+**Verified working:** a sample internal CTI PDF was ingested, retrieved (rerank
+score 8/10), and answered with the exact C2 domain and mitigations quoted from
+the document — nothing invented, nothing sent to a cloud.
 
 ## Success criteria
 

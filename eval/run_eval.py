@@ -28,13 +28,26 @@ import argparse
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import re
+import subprocess
 import ollama
 from rag.engine import answer
 from rag.hybrid import hybrid_retrieve
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QUESTIONS_PATH = os.path.join(ROOT, "eval", "questions.json")
-JUDGE_LOCAL = "qwen2.5-coder:7b-64k"  # fallback judge if no cloud
+JUDGE_LOCAL = "qwen2.5-coder:7b-64k"  # fallback judge ONLY if cloud judge unavailable
+
+
+def cloud_oneshot(prompt, timeout=180):
+    """One-shot cloud call via `hermes -z` with tools disabled. Returns text or None."""
+    try:
+        p = subprocess.run(["hermes", "-z", prompt, "-t", ""],
+                           capture_output=True, text=True, timeout=timeout)
+        out = (p.stdout or "").strip()
+        return out or None
+    except Exception:
+        return None
 
 
 def keyword_coverage(ans, keywords):
@@ -52,34 +65,38 @@ def context_hit(query, expected_docs):
     return int(any(any(e.lower() in g or g in e.lower() for g in got) for e in expected_docs))
 
 
-def judge(question, ans, judge_model):
-    """LLM-judge: score answer correctness 0-1 for a cybersecurity question."""
-    prompt = (f"You are grading a cybersecurity answer. Question: {question}\n\n"
-              f"Answer: {ans[:1500]}\n\n"
+def judge(question, ans, use_cloud_judge=True):
+    """LLM-judge correctness 0-1. Uses the CLOUD model by default so the judge is
+    independent of the local generator (no self-grading bias). Falls back to the
+    local 7B only if the cloud call fails."""
+    prompt = (f"You are grading a cybersecurity answer for technical correctness.\n"
+              f"Question: {question}\n\nAnswer: {ans[:1500]}\n\n"
               "Score the answer's technical correctness and completeness from 0 to 10 "
-              "(10=fully correct and complete, 0=wrong/empty). Reply ONLY the number.")
+              "(10=fully correct and complete, 0=wrong/empty). Reply with ONLY the number.")
+    if use_cloud_judge:
+        out = cloud_oneshot(prompt, timeout=120)
+        if out:
+            m = re.search(r"\d+", out)
+            if m:
+                return round(min(int(m.group()), 10) / 10, 3)
+    # local fallback
     try:
-        r = ollama.generate(model=judge_model, prompt=prompt,
+        r = ollama.generate(model=JUDGE_LOCAL, prompt=prompt,
                             options={"temperature": 0, "num_predict": 4})
-        import re
         m = re.search(r"\d+", r["response"])
-        return round(int(m.group()) / 10, 3) if m else None
+        return round(min(int(m.group()), 10) / 10, 3) if m else None
     except Exception:
         return None
 
 
 def cloud_answer(question):
-    """Cloud ceiling via Hermes `hermes send`-style — here we shell to the default profile.
-    Returns (answer, latency). Requires portal creds in the default profile."""
-    import subprocess
+    """Cloud ceiling (config C): the expensive cloud model answering directly,
+    no retrieval. This is the quality bar CyberRAG aims to match locally."""
     t0 = time.time()
-    try:
-        p = subprocess.run(
-            ["hermes", "-z", f"Answer as a cybersecurity analyst, concise and technical: {question}"],
-            capture_output=True, text=True, timeout=180)
-        return p.stdout.strip(), round(time.time() - t0, 1)
-    except Exception as e:
-        return f"[cloud error: {e}]", round(time.time() - t0, 1)
+    out = cloud_oneshot(
+        f"Answer as a senior cybersecurity threat-intelligence analyst, concise and "
+        f"technical: {question}", timeout=180)
+    return (out or "[cloud unavailable]"), round(time.time() - t0, 1)
 
 
 def main():
@@ -93,8 +110,6 @@ def main():
         questions = json.load(f)
     if args.limit:
         questions = questions[:args.limit]
-
-    judge_model = JUDGE_LOCAL  # local self-judge by default (still informative)
 
     rows = []
     for i, q in enumerate(questions):
@@ -118,10 +133,10 @@ def main():
                             "keyword_coverage": keyword_coverage(ca, q.get("keywords", []))}
 
         if args.judge:
-            row["local_only"]["judge"] = judge(q["question"], row["local_only"]["answer"], judge_model)
-            row["cyberrag"]["judge"] = judge(q["question"], row["cyberrag"]["answer"], judge_model)
+            row["local_only"]["judge"] = judge(q["question"], row["local_only"]["answer"])
+            row["cyberrag"]["judge"] = judge(q["question"], row["cyberrag"]["answer"])
             if args.cloud:
-                row["cloud"]["judge"] = judge(q["question"], row["cloud"]["answer"], judge_model)
+                row["cloud"]["judge"] = judge(q["question"], row["cloud"]["answer"])
         rows.append(row)
 
     def avg(cfg, key):
