@@ -21,8 +21,8 @@ import ollama
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHROMA_DIR = os.path.join(ROOT, "data", "chroma")
 COLLECTION = "cyber_kb"
-EMBED_MODEL = "nomic-embed-text"
-GEN_MODEL = "qwen2.5-coder:7b-64k"
+EMBED_MODEL = os.getenv("CYBERRAG_EMBED_MODEL", "nomic-embed-text")
+GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwen2.5-coder:7b")
 TOP_K = 5
 
 SYSTEM = (

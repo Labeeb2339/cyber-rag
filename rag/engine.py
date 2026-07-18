@@ -30,7 +30,7 @@ import ollama
 from rag.hybrid import hybrid_retrieve
 from rag import kg
 
-GEN_MODEL = "qwen2.5-coder:7b-64k"
+GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwen2.5-coder:7b")
 
 SYSTEM = (
     "You are a senior cybersecurity threat-intelligence analyst. Answer using ONLY "

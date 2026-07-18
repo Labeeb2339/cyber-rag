@@ -1,87 +1,58 @@
-# CyberRAG — Local Cybersecurity Threat-Intelligence RAG
+# CyberRAG Architecture
 
-**For:** CyberSec Malaysia
-**Built by:** HiddenTrojan (Labeeb)
-**Date started:** 2026-06-22
+CyberRAG is a local-first research prototype for evidence-grounded cybersecurity questions. The architecture separates ingestion, retrieval, graph lookup, generation, and evaluation so each layer can be tested independently.
 
-## The thesis (what we're proving)
+## Data flow
 
-> A cheap, **fully-local** model + a domain-specific RAG pipeline can match the
-> analytical quality of expensive cloud models on cybersecurity threat-intel
-> tasks — **without any data leaving the network.**
+```mermaid
+flowchart TD
+    S[Public or user-supplied documents] --> C[Extract and chunk]
+    C --> E[Local Ollama embeddings]
+    E --> V[(Chroma vector store)]
+    C --> B[(BM25 index)]
+    M[MITRE ATT&CK STIX] --> G[(NetworkX graph)]
 
-Three things must be true at the end:
-1. **Local & private** — no API calls, no data egress. Everything runs on the box
-   (Ollama LLM + local embeddings + local vector DB).
-2. **Accurate** — RAG-grounded answers cite real sources and don't hallucinate.
-3. **Competitive** — measurably closes the gap vs a cloud model (Claude/GPT) on
-   the same questions, shown with numbers, not vibes.
-
-## Architecture (all local)
-
-```
-                 ┌─────────────────────────────────────────────┐
-                 │              CyberRAG (offline)               │
-                 │                                               │
-  query ──▶ embed (nomic-embed-text, Ollama) ──▶ vector search   │
-                 │                    │                          │
-                 │              ChromaDB (local, on-disk)        │
-                 │                    │                          │
-                 │            top-k chunks + metadata            │
-                 │                    │                          │
-                 │   prompt(query + retrieved context) ──▶ LLM   │
-                 │              qwen2.5-coder:7b (Ollama)        │
-                 │                    │                          │
-                 └────────────────────┼──────────────────────────┘
-                                       ▼
-                          grounded answer + citations
+    Q[Question] --> VR[Vector search]
+    Q --> BR[BM25 search]
+    Q --> ID[Exact ID lookup]
+    VR --> F[RRF fusion]
+    BR --> F
+    ID --> F
+    F --> RR[Optional local rerank]
+    Q --> GR[Graph entity routing]
+    GR --> G
+    G --> P[Grounded prompt]
+    RR --> P
+    P --> L[Local Ollama generator]
+    L --> A[Answer and source list]
 ```
 
-- **Embeddings:** `nomic-embed-text` via Ollama (local, 768-dim, fast, free).
-- **Vector store:** ChromaDB (embedded, on-disk at `data/chroma/`, no server).
-- **Generator:** `qwen2.5-coder:7b-64k` via Ollama (fits the 8GB GPU, 34 tok/s).
-- **Baseline for comparison:** a cloud model (Claude/GPT via Nous Portal) — used
-  ONLY in the eval harness to score the gap, never in the production path.
+## Components
 
-## Corpus (the domain knowledge)
+- `ingest/fetch_authoritative.py` downloads public source material. This is a networked setup step.
+- `ingest/build_index.py` chunks documents, creates local embeddings, and writes Chroma data.
+- `ingest/ingest_docs.py` adds user-owned documents without changing repository source.
+- `rag/hybrid.py` implements vector search, BM25, exact-ID lookup, RRF, and optional reranking.
+- `rag/kg.py` builds and queries a MITRE ATT&CK relationship graph.
+- `rag/engine.py` combines graph facts and retrieved passages into the grounded prompt.
+- `eval/run_eval.py` runs fixed-question comparisons and records the requested judge backend.
 
-Starting material already on this machine — no scraping needed for v1:
-| Source | Items | What it gives |
-|---|---|---|
-| Anthropic-Cybersecurity-Skills | 754 SKILL.md | TTPs across 26 domains, mapped to MITRE ATT&CK/NIST |
-| Claude-BugHunter | 71 SKILL.md | bug-bounty/web-exploitation playbooks from real H1 reports |
-| MITRE ATT&CK quick-ref | 1 | tactic/technique taxonomy |
-| Threat-intel reports/IOCs | latest.json | live MY-focused IOC context |
+## Retrieval rules
 
-Expandable later: CVE/NVD dumps, CISA KEV, MITRE ATT&CK full STIX, vendor advisories.
+Dense retrieval is useful for semantic similarity. BM25 is useful for exact names, technique IDs, and CVE identifiers. Reciprocal-rank fusion combines both without assuming comparable score scales. An exact identifier found in the query receives a dominant boost when the same identifier occurs in a candidate.
 
-## Pipeline stages
+The graph route activates only for entity or relationship questions that resolve to a known ATT&CK node. Graph facts and passages remain distinct in the prompt and use different citation labels.
 
-1. **`ingest/`** — load corpus → chunk (markdown-aware, ~512 tokens, overlap) →
-   embed → store in Chroma with metadata (source, domain, ATT&CK id).
-2. **`rag/`** — query → embed → retrieve top-k → build grounded prompt →
-   generate with local LLM → return answer + citations.
-3. **`eval/`** — a fixed question set; score **local+RAG** vs **local-only** vs
-   **cloud** on the same questions. Metrics: retrieval hit-rate, answer
-   correctness (LLM-judge + keyword), citation validity, hallucination rate,
-   latency, cost.
+## Local and network boundaries
 
-## Success criteria (the demo)
-- Local+RAG **beats local-only** decisively (proves RAG adds the domain expertise).
-- Local+RAG lands **within a small margin of cloud** (proves the gap is bridged).
-- **Zero network egress** during a production query (proven by running with
-  network disabled / monitoring no outbound calls).
+Normal query execution uses local Ollama models, local Chroma/BM25 indexes, and a local NetworkX graph. Network access is required when fetching the public corpus. External evaluation is also networked when `CYBERRAG_EVAL_COMMAND` invokes a hosted service.
 
-## Stack
-- Python 3.11 + uv venv
-- `chromadb`, `ollama` (python client), `langchain-text-splitters` (chunking only),
-  `tiktoken`, `rich` (CLI), `pytest` (eval)
-- No cloud dependency in the core path.
+"Local query path" does not by itself prove zero egress. A deployment should still verify host networking, telemetry, package behaviour, logs, and operating-system controls.
 
-## Status
-- [x] Project scaffold
-- [ ] Pull `nomic-embed-text` (in progress)
-- [ ] Ingest pipeline
-- [ ] RAG query pipeline
-- [ ] Eval harness + question set
-- [ ] Demo run + writeup for CyberSec Malaysia
+## Generated and sensitive data
+
+The repository ignores downloaded corpora, vector indexes, BM25 pickles, graph pickles, test documents, and evaluation logs. Private incident reports must never be committed. Custom sources are passed explicitly with `--extra-source LABEL=GLOB`; the code contains no author-specific filesystem paths.
+
+## Evaluation limits
+
+The committed snapshot contains 15 questions. It is useful for regression testing, especially exact-ID failures, but is too small to establish general model quality. The original result did not record whether every model-judge score came from the external evaluator or a local fallback. The current runner removes that silent fallback and records the selected backend.

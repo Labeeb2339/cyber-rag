@@ -7,10 +7,10 @@ No network egress. Run:  python ingest/build_index.py
 """
 import os
 import re
-import sys
 import glob
 import hashlib
 import json
+import argparse
 
 import chromadb
 import ollama
@@ -19,14 +19,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHROMA_DIR = os.path.join(ROOT, "data", "chroma")
 COLLECTION = "cyber_kb"
-EMBED_MODEL = "nomic-embed-text"
+EMBED_MODEL = os.getenv("CYBERRAG_EMBED_MODEL", "nomic-embed-text")
 
-# Corpus sources on this machine.
-CORPUS_GLOBS = [
-    (r"C:/Users/Labeeb/cyber-arsenal/skill-libs/Anthropic-Cybersecurity-Skills/skills/*/SKILL.md", "anthropic-cyber"),
-    (r"C:/Users/Labeeb/cyber-arsenal/skill-libs/Claude-BugHunter/skills/*/SKILL.md", "bughunter"),
-    (r"C:/Users/Labeeb/obsidian-vault/Cybersecurity/*.md", "vault-notes"),
-    # Authoritative corpora (fetched by fetch_authoritative.py)
+# Authoritative corpora fetched by fetch_authoritative.py. Optional private or
+# local sources are supplied explicitly with --extra-source LABEL=GLOB so this
+# repository remains portable and never assumes access to the author's files.
+DEFAULT_CORPUS_GLOBS = [
     (os.path.join(ROOT, "corpus", "attack", "*.md"), "mitre-attack"),
     (os.path.join(ROOT, "corpus", "kev", "*.md"), "cisa-kev"),
     (os.path.join(ROOT, "corpus", "capec", "*.md"), "capec"),
@@ -56,7 +54,20 @@ def extract_meta(path, source, text):
     }
 
 
-def main():
+def parse_extra_sources(specs):
+    """Parse repeatable LABEL=GLOB values without touching the filesystem."""
+    parsed = []
+    for spec in specs or []:
+        if "=" not in spec:
+            raise ValueError(f"invalid extra source {spec!r}; expected LABEL=GLOB")
+        label, pattern = (part.strip() for part in spec.split("=", 1))
+        if not label or not pattern:
+            raise ValueError(f"invalid extra source {spec!r}; expected LABEL=GLOB")
+        parsed.append((pattern, label))
+    return parsed
+
+
+def main(extra_sources=None):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1800, chunk_overlap=200,
         separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " "],
@@ -71,7 +82,8 @@ def main():
     col = client.create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 
     files = []
-    for pattern, source in CORPUS_GLOBS:
+    corpus_globs = DEFAULT_CORPUS_GLOBS + parse_extra_sources(extra_sources)
+    for pattern, source in corpus_globs:
         for p in glob.glob(pattern):
             files.append((p, source))
     print(f"[ingest] {len(files)} source documents")
@@ -114,4 +126,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--extra-source",
+        action="append",
+        default=[],
+        metavar="LABEL=GLOB",
+        help="add a local corpus glob without editing the repository",
+    )
+    args = parser.parse_args()
+    main(args.extra_source)

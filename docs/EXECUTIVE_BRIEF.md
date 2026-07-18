@@ -1,75 +1,39 @@
 # CyberRAG — Executive Brief
 
-**For:** CyberSec Malaysia
-**One line:** A fully-local AI threat-intelligence analyst that matches cloud-model quality on cybersecurity questions while guaranteeing **no sensitive data ever leaves your network**.
-
----
+**Status:** independent prototype built in response to a CyberSecurity Malaysia challenge brief. It is not an official deployment or endorsed product.
 
 ## The problem
 
-Security teams want to use LLMs for threat intel, alert triage, and analyst
-augmentation. But they're stuck between two bad options:
+Small local language models preserve privacy and avoid per-query cloud cost, but they often miss specialist threat-intelligence facts or invent CVE and ATT&CK identifiers. Sending internal incident material to a hosted model can also conflict with an organisation's data-handling requirements.
 
-- **Cloud models (GPT, Claude):** powerful, but every query — internal IOCs,
-  victim data, incident details — is sent to a third-party provider. For a
-  CERT/SOC handling classified material, that's a non-starter.
-- **Local open models:** private and cheap, but they lack security domain
-  expertise and **hallucinate** CVE numbers, ATT&CK technique IDs, and threat
-  attributions — dangerous in an intelligence product.
+## The prototype
 
-## The solution: CyberRAG
+CyberRAG keeps the normal query path on one machine and grounds answers with:
 
-Give a small **local** model the domain expertise it lacks by grounding every
-answer in an authoritative cybersecurity knowledge base — retrieved locally,
-generated locally, cited inline. Result: cloud-level answers, zero egress, ~$0
-marginal cost.
+- local vector retrieval;
+- BM25 exact-term retrieval;
+- reciprocal-rank fusion and exact identifier boosts;
+- a MITRE ATT&CK relationship graph;
+- a local Ollama generator that must cite retrieved evidence.
 
-## Three things that make it credible (not a demo toy)
+Public sources can be rebuilt from MITRE ATT&CK, CISA KEV, CAPEC, and Sigma. Local PDF, DOCX, Markdown, text, and HTML documents can be added without committing them to the repository.
 
-1. **Authoritative corpus** — MITRE ATT&CK (858 techniques), CISA KEV (1,623
-   exploited CVEs), CAPEC (615 patterns), Sigma (1,340 detection rules), plus
-   825+ practical exploitation playbooks. ~5,200 docs / 13,000+ searchable chunks.
-2. **Hybrid retrieval + knowledge graph** — vector + keyword (BM25) + rank-fusion
-   + rerank for accuracy, PLUS a NetworkX graph over ATT&CK (2,139 nodes / 18,984
-   edges) for multi-hop questions vector search can't answer (*"which techniques
-   does APT29 use and how do I detect them?"*).
-3. **Measured, not claimed** — an evaluation harness scores local-only vs CyberRAG
-   vs a cloud ceiling on the same 15-question set, graded by an independent cloud
-   model:
+## Evidence
 
-   | | local-only | **CyberRAG** | cloud |
-   |---|---|---|---|
-   | Correctness | 0.43 | **0.65** | 0.77 |
-   | Retrieval hit-rate | — | **0.93** | — |
-   | Latency | 12s | **15s** | 45s |
-   | Cost / egress | $0 | **$0 / none** | $$ / leaks |
+A committed 15-question pilot snapshot records:
 
-   CyberRAG beats raw local-only on **every question** (+51% correctness) and
-   closes ~58% of the gap to cloud — at zero cost, 3× faster, with no data egress.
+| Metric | Local model only | Local model + CyberRAG |
+|---|---:|---:|
+| Keyword coverage | 0.627 | **0.843** |
+| Context hit rate | — | **0.933** |
+| Mean latency | 11.95 s | 14.65 s |
 
-## Why local RAG is *more secure*, not just cheaper
+The result supports the narrower claim that retrieval improved this local model on this fixed question set. It does not establish cloud parity, production reliability, or broad cybersecurity accuracy.
 
-Per the 2025 arXiv study *"Securing RAG: A Risk Assessment and Mitigation
-Framework"*, cloud-hosted RAG carries risk classes CyberRAG **eliminates by
-construction**: prompt disclosure to a third-party LLM (R7), retrieval data
-leakage (R2), and embedding inversion by an external party (R3). When the model,
-the index, and the embeddings all live on your host, those attack surfaces don't
-exist.
+## Appropriate next validation
 
-## Deploy it on your own data
-
-The headline feature for an operational team: drop your own **PDFs / Word docs /
-text** (threat advisories, incident reports, pentest findings) into a folder,
-ingest them locally, and query them immediately — auto-tagged with the ATT&CK
-techniques and CVEs found inside, retrieved and cited alongside the public corpus.
-Nothing is uploaded anywhere.
-
-## Hardware reality
-
-Runs on a single laptop with an 8GB GPU (`qwen2.5-coder:7b` at ~34 tok/s). No
-cluster, no GPUs farm, no per-query API bill. Scales down to commodity hardware a
-Malaysian agency or SME already owns.
-
----
-
-*Built by Muhammad Labeeb Aryan (Team Powerpuff Girls) — local-first security AI.*
+1. Expand the benchmark and separate development from held-out questions.
+2. Record evaluator name, version, prompt, and backend for every result.
+3. Test permission boundaries and prompt-injection behaviour with synthetic documents.
+4. Run a network-egress check during query-only operation.
+5. Evaluate with domain reviewers before operational use.
