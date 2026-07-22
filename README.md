@@ -2,6 +2,13 @@
 
 **A fully local cybersecurity RAG prototype with hybrid retrieval, MITRE ATT&CK graph grounding, cited answers, and a repeatable evaluation harness.**
 
+![Paired CyberRAG pilot plot showing keyword coverage for the local-only and retrieval-augmented answer to each of 15 questions](docs/assets/cyberrag-pilot-coverage.svg)
+
+*Generated from the checked-in 15-question pilot snapshot. Mean deterministic
+keyword coverage increased from 0.627 to 0.843, expected documents appeared in
+the top five for 14/15 questions, and mean latency increased by 2.694 seconds.
+This is a small local pilot, not production validation or cloud-model parity.*
+
 I built CyberRAG to explore a practical question: how much can retrieval improve
 a small local model on threat-intelligence tasks while keeping query-time data
 on the user's machine?
@@ -139,6 +146,12 @@ python -m pytest -q
 ```
 
 The unit tests cover tokenization, stopword handling, exact security-identifier extraction, reciprocal-rank fusion, and deterministic evaluation metrics. Full end-to-end evaluation additionally requires Ollama plus generated corpus/index files.
+
+Verify that the README benchmark graphic still matches the checked-in snapshot:
+
+```bash
+python scripts/generate_readme_assets.py --check
+```
 
 ## Repository boundaries
 
