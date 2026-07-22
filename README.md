@@ -2,9 +2,13 @@
 
 **A fully local cybersecurity RAG prototype with hybrid retrieval, MITRE ATT&CK graph grounding, cited answers, and a repeatable evaluation harness.**
 
-CyberRAG explores a practical question: how much can retrieval improve a small local model on threat-intelligence tasks while keeping query-time data on the user's machine?
+I built CyberRAG to explore a practical question: how much can retrieval improve
+a small local model on threat-intelligence tasks while keeping query-time data
+on the user's machine?
 
-The project was built in response to a CyberSecurity Malaysia challenge brief. It is an independent prototype, not an official commission, deployment, or endorsed CyberSecurity Malaysia product.
+I began the project in response to a CyberSecurity Malaysia challenge brief. It
+is an independent prototype, not an official commission, deployment, or endorsed
+CyberSecurity Malaysia product.
 
 ## What it demonstrates
 
