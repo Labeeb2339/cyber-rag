@@ -4,10 +4,13 @@
 
 ![Paired CyberRAG pilot plot showing keyword coverage for the local-only and retrieval-augmented answer to each of 15 questions](docs/assets/cyberrag-pilot-coverage.svg)
 
-*Generated from the checked-in 15-question pilot snapshot. Mean deterministic
-keyword coverage increased from 0.627 to 0.843, expected documents appeared in
-the top five for 14/15 questions, and mean latency increased by 2.694 seconds.
-This is a small local pilot, not production validation or cloud-model parity.*
+*I generate this paired plot directly from the checked-in
+[15-question pilot snapshot](eval/results_2026-06-22_1901.json) with the
+[checked-in renderer](scripts/generate_readme_assets.py). It keeps all eight
+improvements, six ties, and one lower score visible: mean deterministic keyword
+coverage increased from 0.627 to 0.843, expected documents appeared in the top
+five for 14/15 questions, and mean latency increased by 2.694 seconds. This is a
+small local pilot, not production validation or cloud-model parity.*
 
 I built CyberRAG to explore a practical question: how much can retrieval improve
 a small local model on threat-intelligence tasks while keeping query-time data

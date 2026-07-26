@@ -104,14 +104,7 @@ def _svg(data: dict[str, Any]) -> str:
         ),
         '<rect width="1200" height="790" rx="28" fill="#071923"/>',
         '<path d="M0 0H1200V16H0Z" fill="#35d2cf"/>',
-        '<g opacity="0.18" stroke="#7ab8c2" stroke-width="1">',
-        '<path d="M36 112H458M36 172H458M36 232H458M36 292H458M36 352H458M36 412H458M36 472H458M36 532H458M36 592H458M36 652H458"/>',
-        '<path d="M66 78V704M146 78V704M226 78V704M306 78V704M386 78V704"/>',
-        "</g>",
-        '<g fill="none" stroke="#35d2cf" stroke-width="2.5" opacity="0.55">',
-        '<path d="M66 598L146 472L226 532L306 352L386 412"/>',
-        '<circle cx="66" cy="598" r="6"/><circle cx="146" cy="472" r="6"/><circle cx="226" cy="532" r="6"/><circle cx="306" cy="352" r="6"/><circle cx="386" cy="412" r="6"/>',
-        "</g>",
+        '<line x1="472" y1="78" x2="472" y2="704" stroke="#1e3c47"/>',
         '<g font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">',
         '<text x="48" y="64" fill="#89f2ed" font-size="15" font-weight="700" letter-spacing="2.2">CYBERRAG / PAIRED LOCAL PILOT</text>',
         '<text x="48" y="112" fill="#f2fbfc" font-size="36" font-weight="760">Did retrieval help?</text>',
@@ -132,6 +125,7 @@ def _svg(data: dict[str, Any]) -> str:
         '<text x="780" y="142" fill="#b7d0d5" font-size="13">local only</text>',
         '<circle cx="895" cy="137" r="6" fill="#35d2cf"/>',
         '<text x="908" y="142" fill="#b7d0d5" font-size="13">CyberRAG</text>',
+        '<text x="1153" y="180" fill="#789aa2" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.8">HIT</text>',
     ]
 
     for tick in range(0, 6):
