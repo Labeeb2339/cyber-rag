@@ -134,9 +134,22 @@ python eval/run_eval.py
 
 # Add a local model judge; the backend is recorded in the output
 python eval/run_eval.py --judge --judge-backend local
+```
 
-# Use an external command that reads the prompt from stdin
-set CYBERRAG_EVAL_COMMAND=your-evaluator-command
+To use an external command that reads the prompt from standard input, configure
+it for your shell.
+
+Bash:
+
+```bash
+export CYBERRAG_EVAL_COMMAND="your-evaluator-command"
+python eval/run_eval.py --judge --judge-backend command --cloud
+```
+
+PowerShell:
+
+```powershell
+$env:CYBERRAG_EVAL_COMMAND = "your-evaluator-command"
 python eval/run_eval.py --judge --judge-backend command --cloud
 ```
 
