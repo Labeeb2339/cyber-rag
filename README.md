@@ -1,6 +1,11 @@
 # CyberRAG
 
-**A fully local cybersecurity RAG prototype with hybrid retrieval, MITRE ATT&CK graph grounding, cited answers, and a repeatable evaluation harness.**
+CyberRAG is a local experiment around one question: can retrieval help a small
+model answer cybersecurity questions without sending the query to a cloud
+service?
+
+It combines BM25 and vector retrieval, MITRE ATT&CK graph data, local Ollama
+generation, cited answers, and a repeatable evaluation harness.
 
 ![Paired CyberRAG pilot plot showing keyword coverage for the local-only and retrieval-augmented answer to each of 15 questions](docs/assets/cyberrag-pilot-coverage.svg)
 
@@ -11,10 +16,6 @@ improvements, six ties, and one lower score visible: mean deterministic keyword
 coverage increased from 0.627 to 0.843, expected documents appeared in the top
 five for 14/15 questions, and mean latency increased by 2.694 seconds. This is a
 small local pilot, not production validation or cloud-model parity.*
-
-I built CyberRAG to explore a practical question: how much can retrieval improve
-a small local model on threat-intelligence tasks while keeping query-time data
-on the user's machine?
 
 I began the project in response to a CyberSecurity Malaysia challenge brief. It
 is an independent prototype, not an official commission, deployment, or endorsed
