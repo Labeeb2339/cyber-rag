@@ -58,6 +58,8 @@ the same 15 questions:
 | + HyDE query rewriting | 0.867 | 0.678 | 0.624 | 0.696 | 266.6 s |
 | + multi-query expansion | 0.933 | 0.678 | 0.717 | 0.785 | 274.7 s |
 
+![Grouped bar chart of hit@k, MRR, and nDCG@k for the five retrieval configs; the cross-encoder rerank lifts MRR to 0.847 and nDCG to 0.821](docs/assets/retrieval-benchmark.svg)
+
 Three findings:
 
 1. **The cross-encoder is the one upgrade that earns its place** — MRR +18%
