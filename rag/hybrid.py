@@ -20,7 +20,7 @@ CHROMA_DIR = os.path.join(ROOT, "data", "chroma")
 BM25_PATH = os.path.join(ROOT, "data", "bm25.pkl")
 COLLECTION = "cyber_kb"
 EMBED_MODEL = os.getenv("CYBERRAG_EMBED_MODEL", "nomic-embed-text")
-GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwen2.5-coder:7b")
+GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwythos-ctf:64k")
 
 _tok = re.compile(r"[A-Za-z0-9_.\-]+")
 
@@ -73,8 +73,47 @@ def _col():
     return _cache["col"]
 
 
-def vector_search(query, k, source_filter=None):
-    qemb = ollama.embeddings(model=EMBED_MODEL, prompt=query)["embedding"]
+def _generate(prompt, num_predict=140):
+    """One local LLM call (temperature 0); returns stripped text or '' on failure."""
+    try:
+        r = ollama.generate(model=GEN_MODEL, prompt=prompt,
+                            options={"temperature": 0, "num_predict": num_predict})
+        return (r.get("response") or "").strip()
+    except Exception:
+        return ""
+
+
+def hyde_document(query):
+    """HyDE (Hypothetical Document Embeddings): generate the answer a real report
+    would contain, then embed *that* for vector search.
+
+    A question ("how do I ...") and the relevant doc ("the attacker ...") use
+    different words, so embedding the bare query often misses. The fake answer
+    borrows the document's vocabulary (technique IDs, tool names, procedures),
+    bridging that gap. BM25 still gets the original query (exact IDs)."""
+    prompt = (
+        "Write a short, dense, technical paragraph (4-6 sentences) that a senior "
+        "cybersecurity analyst would write to answer this question, including the "
+        "specific ATT&CK technique IDs (T####), CVE numbers, tool names, and "
+        "procedures a real report would mention.\n\nQuestion: " + query + "\n\nAnswer:"
+    )
+    return _generate(prompt)
+
+
+def multi_queries(query, n=2):
+    """Query expansion: generate `n` alternative phrasings of the same intent."""
+    prompt = (
+        f"Rewrite the following search query {n} different ways, each on its own "
+        f"line, keeping the same intent but different wording. Output only the "
+        f"rewrites, one per line, no numbering.\n\nQuery: {query}\n\nRewrites:"
+    )
+    lines = [l.strip(" -•\t") for l in _generate(prompt).splitlines() if l.strip()]
+    return [query] + [l for l in lines if l][:n]
+
+
+def vector_search(query, k, source_filter=None, qtext=None):
+    """Dense retrieval. ``qtext`` overrides what gets embedded (e.g. query+HyDE)."""
+    qemb = ollama.embeddings(model=EMBED_MODEL, prompt=qtext or query)["embedding"]
     where = {"source": {"$in": source_filter}} if source_filter else None
     res = _col().query(query_embeddings=[qemb], n_results=k, where=where,
                        include=["documents", "metadatas", "distances"])
@@ -155,6 +194,36 @@ def llm_rerank(query, candidates, top_n):
     return candidates[:top_n]
 
 
+_reranker = None
+
+
+def _get_reranker():
+    """Lazy-load the cross-encoder (downloads ~1GB of weights on first use)."""
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder("BAAI/bge-reranker-v2-m3")
+    return _reranker
+
+
+def cross_encoder_rerank(query, candidates, top_n):
+    """Proper cross-encoder rerank (bge-reranker-v2-m3).
+
+    Unlike the LLM-as-reranker, a cross-encoder scores query+passage JOINTLY in
+    one forward pass — faster, deterministic, and the industry-standard 2nd
+    stage. Runs on CPU (no GPU needed to rerank a dozen candidates)."""
+    model = _get_reranker()
+    pairs = [(query, c["doc"][:700]) for c in candidates]
+    try:
+        scores = model.predict(pairs)
+    except Exception:
+        return llm_rerank(query, candidates, top_n)  # graceful fallback
+    for c, s in zip(candidates, scores):
+        c["cross"] = float(s)
+    candidates.sort(key=lambda x: x.get("cross", 0.0), reverse=True)
+    return candidates[:top_n]
+
+
 def id_lookup(ids, source_filter=None):
     """Directly fetch the canonical doc for an exact identifier (CVE/ATT&CK).
     The authoritative corpus names these docs `<ID>.md` (e.g. CVE-2021-44228.md,
@@ -183,9 +252,31 @@ def id_lookup(ids, source_filter=None):
     return out
 
 
-def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True):
-    """Main entry: vector + BM25 (+ exact-ID lookup) -> RRF -> rerank -> top_k."""
-    vec = vector_search(query, pool, source_filter)
+def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True,
+                    rerank_method="llm", rewrite=None):
+    """Main entry: vector + BM25 (+ exact-ID lookup) -> RRF -> rerank -> top_k.
+
+    ``rerank_method``: ``"llm"`` (LLM-as-reranker) or ``"cross"`` (cross-encoder).
+
+    ``rewrite`` selects query rewriting (applied to the VECTOR side only — BM25
+    always gets the original query for exact identifiers):
+
+    - ``None``    — current behaviour (embed the bare query)
+    - ``"hyde"``  — embed query + a generated hypothetical answer document
+    - ``"multi"`` — generate alternative phrasings, vector-search each, dedupe
+    """
+    if rewrite == "hyde":
+        hyde = hyde_document(query)
+        vec = vector_search(query, pool, source_filter, qtext=(query + "\n\n" + hyde) if hyde else query)
+    elif rewrite == "multi":
+        vec, seen = [], set()
+        for q in multi_queries(query):
+            for item in vector_search(q, pool, source_filter):
+                if item["id"] not in seen:
+                    seen.add(item["id"])
+                    vec.append(item)
+    else:
+        vec = vector_search(query, pool, source_filter)
     bm = bm25_search(query, pool, source_filter)
     ids = _query_ids(query)
     # guarantee canonical ID docs are in the candidate pool
@@ -195,7 +286,7 @@ def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True):
         vec = direct + vec
     fused = rrf_fuse(vec, bm, query=query)[:pool]
     if rerank and fused:
-        fused = llm_rerank(query, fused, top_k)
+        fused = cross_encoder_rerank(query, fused, top_k) if rerank_method == "cross" else llm_rerank(query, fused, top_k)
     else:
         fused = fused[:top_k]
     return [{"doc": f["doc"], "meta": f["meta"],

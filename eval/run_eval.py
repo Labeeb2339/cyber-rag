@@ -38,7 +38,7 @@ from rag.hybrid import hybrid_retrieve
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QUESTIONS_PATH = os.path.join(ROOT, "eval", "questions.json")
-JUDGE_LOCAL = os.getenv("CYBERRAG_JUDGE_MODEL", "qwen2.5-coder:7b")
+JUDGE_LOCAL = os.getenv("CYBERRAG_JUDGE_MODEL", "qwythos-ctf:64k")  # fallback judge ONLY if cloud judge unavailable
 
 
 def cloud_oneshot(prompt, timeout=180):
