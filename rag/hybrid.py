@@ -252,6 +252,15 @@ def id_lookup(ids, source_filter=None):
     return out
 
 
+def _final_score(f: dict) -> float:
+    """Best available score for display (rerank > cross > vector > bm25)."""
+    for key in ("rerank", "cross", "vscore", "bscore"):
+        v = f.get(key)
+        if v is not None:
+            return round(float(v), 3)
+    return 0.0
+
+
 def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True,
                     rerank_method="llm", rewrite=None):
     """Main entry: vector + BM25 (+ exact-ID lookup) -> RRF -> rerank -> top_k.
@@ -289,8 +298,7 @@ def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True,
         fused = cross_encoder_rerank(query, fused, top_k) if rerank_method == "cross" else llm_rerank(query, fused, top_k)
     else:
         fused = fused[:top_k]
-    return [{"doc": f["doc"], "meta": f["meta"],
-             "score": round(f.get("rerank", f.get("vscore", 0)), 3)} for f in fused]
+    return [{"doc": f["doc"], "meta": f["meta"], "score": _final_score(f)} for f in fused]
 
 
 if __name__ == "__main__":
