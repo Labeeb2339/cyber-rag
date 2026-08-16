@@ -44,6 +44,34 @@ The deterministic metrics show stronger factual coverage and retrieval. The mode
 
 This is a small pilot benchmark, not proof of general cloud-model parity or production readiness.
 
+## Retrieval-config benchmark (2026-08)
+
+`eval/retrieval_metrics.py` + `eval/bench_retrieval.py` measure the standard
+rank-aware IR metrics (hit@k, recall@k, MRR, nDCG@k) across retrieval configs on
+the same 15 questions:
+
+| Config | hit@k | recall@k | MRR | nDCG@k | latency |
+|---|---:|---:|---:|---:|---:|
+| Hybrid (baseline) | 0.933 | 0.711 | 0.717 | 0.790 | 1.1 s |
+| + cross-encoder rerank | 0.933 | **0.733** | **0.847** | **0.821** | 99.5 s |
+| + LLM-as-reranker | 0.933 | 0.711 | 0.717 | 0.790 | 345.5 s |
+| + HyDE query rewriting | 0.867 | 0.678 | 0.624 | 0.696 | 266.6 s |
+| + multi-query expansion | 0.933 | 0.678 | 0.717 | 0.785 | 274.7 s |
+
+Three findings:
+
+1. **The cross-encoder is the one upgrade that earns its place** — MRR +18%
+   (0.717 → 0.847) and nDCG +4%: it reorders so the right document lands at
+   rank 1 more often. (Latency is CPU-bound here; a GPU backend is far faster.)
+2. **The LLM-as-reranker is a no-op** — identical metrics to baseline while
+   spending 345 s on 180 sequential LLM calls.
+3. **Query rewriting does not help this corpus** — HyDE *hurts* and multi-query
+   is neutral, each adding ~250 s. It is aimed at vague natural-language queries
+   against a vocabulary-mismatched corpus; these queries are already precise and
+   the exact-ID boost + canonical-doc lookup already dominate.
+
+Run it: `PYTHONPATH= python eval/bench_retrieval.py`.
+
 ## Architecture
 
 ```mermaid
@@ -68,7 +96,7 @@ flowchart LR
 | Lexical retrieval | BM25 |
 | Rank fusion | Reciprocal Rank Fusion + exact-ID boost |
 | Knowledge graph | NetworkX over MITRE ATT&CK STIX |
-| Generator / reranker | `qwen2.5-coder:7b` through Ollama |
+| Generator / reranker | `qwythos-ctf:64k` through Ollama |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design details.
 
@@ -90,7 +118,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 
 ollama pull nomic-embed-text
-ollama pull qwen2.5-coder:7b
+ollama pull qwythos-ctf:64k
 ```
 
 Override the defaults without editing code by setting `CYBERRAG_GEN_MODEL` or `CYBERRAG_EMBED_MODEL`.
