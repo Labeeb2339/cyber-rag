@@ -262,7 +262,7 @@ def _final_score(f: dict) -> float:
 
 
 def hybrid_retrieve(query, top_k=5, pool=12, source_filter=None, rerank=True,
-                    rerank_method="llm", rewrite=None):
+                    rerank_method="cross", rewrite=None):
     """Main entry: vector + BM25 (+ exact-ID lookup) -> RRF -> rerank -> top_k.
 
     ``rerank_method``: ``"llm"`` (LLM-as-reranker) or ``"cross"`` (cross-encoder).

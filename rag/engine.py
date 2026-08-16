@@ -5,9 +5,9 @@ CyberRAG unified engine — the production query path. 100% local.
 Combines:
   1. Knowledge-graph multi-hop facts (for entity/relationship questions about
      APT groups, malware, techniques, mitigations) — rag/kg.py
-  2. Hybrid retrieval (vector + BM25 + RRF + LLM rerank) over the full corpus
+  2. Hybrid retrieval (vector + BM25 + RRF + cross-encoder rerank) over the full corpus
      (ATT&CK, CWE/CAPEC, CISA KEV, Sigma, bug-hunting playbooks) — rag/hybrid.py
-  3. Grounded generation with a local LLM (qwen2.5-coder:7b) — citations required.
+  3. Grounded generation with a local LLM (qwythos-ctf:64k) — citations required.
 
 A query is routed to the KG when it mentions a known APT/malware/technique AND
 asks a relational question ("which", "what techniques", "used by", "mitigate").
@@ -30,7 +30,7 @@ import ollama
 from rag.hybrid import hybrid_retrieve
 from rag import kg
 
-GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwen2.5-coder:7b")
+GEN_MODEL = os.getenv("CYBERRAG_GEN_MODEL", "qwythos-ctf:64k")
 
 SYSTEM = (
     "You are a senior cybersecurity threat-intelligence analyst. Answer using ONLY "
