@@ -17,6 +17,7 @@ corpus/sigma/
 
 # eval outputs keep the latest only by hand
 eval/results_*.json
+eval/bench_results_*.log
 
 # OS
 Thumbs.db
